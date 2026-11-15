@@ -37,6 +37,22 @@ def show_reports():
         selected_saved_month = st.selectbox("Relatório salvo", report_months)
         if report is None or report.get("month_key") != selected_saved_month:
             report = next(item[2] for item in saved_reports if item[0] == selected_saved_month)
+        with st.form(f"delete_report_{selected_saved_month}"):
+            confirm_report_delete = st.checkbox(
+                "Confirmo excluir este relatório salvo", key=f"confirm_delete_report_{selected_saved_month}"
+            )
+            delete_report = st.form_submit_button("Excluir relatório")
+        if delete_report:
+            if not confirm_report_delete:
+                st.warning("Marque a confirmação antes de excluir.")
+            else:
+                with SessionLocal() as session:
+                    FinanceRepository(session).delete_report(selected_saved_month)
+                session_report = st.session_state.get("selected_financial_report") or {}
+                if session_report.get("month_key") == selected_saved_month:
+                    del st.session_state["selected_financial_report"]
+                st.success("Relatório excluído.")
+                st.rerun()
     if not report:
         st.info("Selecione um mês e gere o relatório. O relatório automático é produzido no último dia do mês pelo agendador.")
         return

@@ -16,6 +16,12 @@ class FinanceService:
         card = CreditCard.create(bank_id, name, due_day, closing_day)
         return self.repository.create_card(card)
 
+    def update_card(self, card_id, bank_id, name, due_day, closing_day):
+        return self.repository.update_card(card_id, bank_id, name, due_day, closing_day)
+
+    def delete_card(self, card_id):
+        self.repository.delete_card(card_id)
+
     def create_expense(self, description, amount, expense_date, category, payment_method, card_id=None):
         invoice_due_date = None
         if payment_method == "Cartão de crédito":
@@ -27,6 +33,21 @@ class FinanceService:
             description, amount, expense_date, category, payment_method, card_id, invoice_due_date
         )
         return self.repository.create_expense(expense)
+
+    def update_expense(self, expense_id, description, amount, expense_date, category, payment_method, card_id=None):
+        invoice_due_date = None
+        if payment_method == "Cartão de crédito":
+            card = self.repository.get_card(card_id) if card_id else None
+            if card is None:
+                raise ValueError("Selecione um cartão cadastrado.")
+            invoice_due_date = self._invoice_due_date(expense_date, card.closing_day, card.due_day)
+        expense = Expense.create(
+            description, amount, expense_date, category, payment_method, card_id, invoice_due_date
+        )
+        return self.repository.update_expense(expense_id, expense)
+
+    def delete_expense(self, expense_id):
+        self.repository.delete_expense(expense_id)
 
     @staticmethod
     def _invoice_due_date(expense_date, closing_day, due_day):
@@ -53,6 +74,19 @@ class FinanceService:
     def create_loan(self, person_name, amount, loan_date, note=""):
         return self.repository.create_loan(Loan.create(person_name, amount, loan_date, note))
 
+    def update_loan(self, loan_id, person_name, amount, loan_date, note, status, returned_date=None):
+        loan = Loan.create(person_name, amount, loan_date, note)
+        if status == "Devolvido":
+            if returned_date is None:
+                raise ValueError("Informe a data de devolução.")
+            loan = loan.mark_returned(returned_date)
+        elif status != "Pendente":
+            raise ValueError("Status de empréstimo inválido.")
+        return self.repository.update_loan(loan_id, loan)
+
+    def delete_loan(self, loan_id):
+        self.repository.delete_loan(loan_id)
+
     def mark_loan_returned(self, loan_id, returned_date):
         return self.repository.mark_loan_returned(loan_id, returned_date)
 
@@ -64,6 +98,12 @@ class FinanceService:
             investment_id, snapshot_date, total_value, contributions
         )
         return self.repository.create_snapshot(snapshot)
+
+    def update_investment_snapshot(self, snapshot_id, snapshot_date, total_value, contributions):
+        return self.repository.update_snapshot(snapshot_id, snapshot_date, total_value, contributions)
+
+    def delete_investment_snapshot(self, snapshot_id):
+        self.repository.delete_snapshot(snapshot_id)
 
     def investment_history(self, investment_id):
         snapshots = self.repository.list_snapshots(investment_id)

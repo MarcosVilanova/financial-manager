@@ -57,11 +57,49 @@ def show_loans():
         for loan in loans
     ]), use_container_width=True, hide_index=True)
 
-    for loan in pending:
-        with st.expander(f"Marcar devolução — {loan.person_name} · {brl(loan.amount)}"):
-            returned_date = st.date_input("Data de devolução", value=date.today(), key=f"returned_{loan.id}")
-            if st.button("Confirmar devolução", key=f"return_{loan.id}"):
-                with SessionLocal() as session:
-                    FinanceService(FinanceRepository(session)).mark_loan_returned(loan.id, returned_date)
-                st.success("Empréstimo marcado como devolvido.")
-                st.rerun()
+    st.subheader("Editar ou excluir empréstimo")
+    selected_loan = st.selectbox(
+        "Empréstimo", loans,
+        format_func=lambda item: f"{item.person_name} — {brl(item.amount)} — {item.status}",
+        key="manage_loan",
+    )
+    statuses = ["Pendente", "Devolvido"]
+    status = st.selectbox(
+        "Status", statuses, index=statuses.index(selected_loan.status),
+        key=f"loan_status_{selected_loan.id}",
+    )
+    returned_date = st.date_input(
+        "Data de devolução", value=selected_loan.returned_date or date.today(),
+        key=f"loan_return_date_{selected_loan.id}",
+    )
+    with st.form(f"edit_loan_{selected_loan.id}"):
+        person = st.text_input("Pessoa", value=selected_loan.person_name)
+        amount_text = st.text_input("Valor (R$)", value=str(selected_loan.amount).replace(".", ","))
+        loan_date = st.date_input("Data do empréstimo", value=selected_loan.loan_date)
+        note = st.text_area("Observação", value=selected_loan.note)
+        update_loan = st.form_submit_button("Salvar empréstimo")
+    if update_loan:
+        try:
+            with SessionLocal() as session:
+                FinanceService(FinanceRepository(session)).update_loan(
+                    selected_loan.id, person, _parse_money(amount_text), loan_date,
+                    note, status, returned_date if status == "Devolvido" else None,
+                )
+            st.success("Empréstimo atualizado.")
+            st.rerun()
+        except (InvalidOperation, ValueError) as error:
+            st.error("Informe um valor válido." if isinstance(error, InvalidOperation) else str(error))
+
+    with st.form(f"delete_loan_{selected_loan.id}"):
+        confirm_loan_delete = st.checkbox(
+            "Confirmo excluir este empréstimo", key=f"confirm_delete_loan_{selected_loan.id}"
+        )
+        delete_loan = st.form_submit_button("Excluir empréstimo")
+    if delete_loan:
+        if not confirm_loan_delete:
+            st.warning("Marque a confirmação antes de excluir.")
+        else:
+            with SessionLocal() as session:
+                FinanceService(FinanceRepository(session)).delete_loan(selected_loan.id)
+            st.success("Empréstimo excluído.")
+            st.rerun()

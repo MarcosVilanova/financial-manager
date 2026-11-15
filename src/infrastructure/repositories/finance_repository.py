@@ -4,6 +4,8 @@ from uuid import uuid4
 
 from sqlalchemy import and_
 
+from src.domain.entities.credit_card import CreditCard
+from src.domain.entities.expense import Expense
 from src.infrastructure.database.models import (
     CreditCardModel,
     ExpenseModel,
@@ -33,10 +35,57 @@ class FinanceRepository:
         row = self.session.get(CreditCardModel, str(card_id))
         return row.to_entity() if row else None
 
+    def update_card(self, card_id, bank_id, name, due_day, closing_day):
+        row = self.session.get(CreditCardModel, str(card_id))
+        if row is None:
+            raise ValueError("Cartão não encontrado.")
+        validated = CreditCard.create(bank_id, name, due_day, closing_day)
+        row.bank_id = str(bank_id)
+        row.name = validated.name
+        row.due_day = validated.due_day
+        row.closing_day = validated.closing_day
+        self.session.commit()
+        return row.to_entity()
+
+    def delete_card(self, card_id):
+        row = self.session.get(CreditCardModel, str(card_id))
+        if row is None:
+            raise ValueError("Cartão não encontrado.")
+        has_expenses = self.session.query(ExpenseModel.id).filter_by(card_id=str(card_id)).first()
+        if has_expenses:
+            raise ValueError("Este cartão tem despesas vinculadas. Exclua ou transfira essas despesas antes.")
+        self.session.delete(row)
+        self.session.commit()
+
     def create_expense(self, expense):
         self.session.add(ExpenseModel.from_entity(expense))
         self.session.commit()
         return expense
+
+    def update_expense(self, expense_id, expense):
+        row = self.session.get(ExpenseModel, str(expense_id))
+        if row is None:
+            raise ValueError("Despesa não encontrada.")
+        validated = Expense.create(
+            expense.description, expense.amount, expense.expense_date, expense.category,
+            expense.payment_method, expense.card_id, expense.invoice_due_date,
+        )
+        row.description = validated.description
+        row.amount = validated.amount
+        row.expense_date = validated.expense_date
+        row.category = validated.category
+        row.payment_method = validated.payment_method
+        row.card_id = str(validated.card_id) if validated.card_id else None
+        row.invoice_due_date = validated.invoice_due_date
+        self.session.commit()
+        return row.to_entity()
+
+    def delete_expense(self, expense_id):
+        row = self.session.get(ExpenseModel, str(expense_id))
+        if row is None:
+            raise ValueError("Despesa não encontrada.")
+        self.session.delete(row)
+        self.session.commit()
 
     def list_expenses(self, start_date=None, end_date=None, category=None, payment_method=None):
         query = self.session.query(ExpenseModel)
@@ -57,6 +106,26 @@ class FinanceRepository:
         self.session.add(LoanModel.from_entity(loan))
         self.session.commit()
         return loan
+
+    def update_loan(self, loan_id, loan):
+        row = self.session.get(LoanModel, str(loan_id))
+        if row is None:
+            raise ValueError("Empréstimo não encontrado.")
+        row.person_name = loan.person_name
+        row.amount = loan.amount
+        row.loan_date = loan.loan_date
+        row.note = loan.note
+        row.status = loan.status
+        row.returned_date = loan.returned_date
+        self.session.commit()
+        return row.to_entity()
+
+    def delete_loan(self, loan_id):
+        row = self.session.get(LoanModel, str(loan_id))
+        if row is None:
+            raise ValueError("Empréstimo não encontrado.")
+        self.session.delete(row)
+        self.session.commit()
 
     def list_loans(self):
         rows = self.session.query(LoanModel).order_by(LoanModel.loan_date.desc()).all()
@@ -129,3 +198,10 @@ class FinanceRepository:
         self.session.add(row)
         self.session.commit()
         return content
+
+    def delete_report(self, month_key):
+        row = self.session.query(MonthlyReportModel).filter_by(month_key=month_key).first()
+        if row is None:
+            raise ValueError("Relatório não encontrado.")
+        self.session.delete(row)
+        self.session.commit()

@@ -54,7 +54,8 @@ def show_investments():
 
     with SessionLocal() as session:
         investments = ListInvestments(InvestmentRepository(session)).execute()
-        banks_by_id = {bank.id: bank.name for bank in BankRepository(session).get_all()}
+        banks = BankRepository(session).get_all()
+        banks_by_id = {bank.id: bank.name for bank in banks}
         repo = FinanceRepository(session)
         snapshots = repo.list_snapshots()
     if not investments:
@@ -101,6 +102,104 @@ def show_investments():
         })
     st.subheader("Carteira")
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    st.subheader("Editar ou excluir investimentos e atualizações")
+    for investment in investments:
+        with st.expander(f"Gerenciar: {investment.name}"):
+            with st.form(f"edit_investment_{investment.id}"):
+                bank = st.selectbox(
+                    "Instituição financeira", banks,
+                    index=next((i for i, item in enumerate(banks) if item.id == investment.bank_id), 0),
+                    format_func=lambda item: item.name,
+                )
+                updated_name = st.text_input("Nome", value=investment.name)
+                updated_type = st.selectbox(
+                    "Tipo", INVESTMENT_TYPES,
+                    index=INVESTMENT_TYPES.index(investment.investment_type)
+                    if investment.investment_type in INVESTMENT_TYPES else len(INVESTMENT_TYPES) - 1,
+                )
+                updated_application_date = st.date_input(
+                    "Data da aplicação", value=investment.application_date,
+                    key=f"application_date_{investment.id}",
+                )
+                update_investment = st.form_submit_button("Salvar dados do investimento")
+            if update_investment:
+                try:
+                    with SessionLocal() as session:
+                        InvestmentRepository(session).update(
+                            investment.id, bank.id, updated_name, updated_type, updated_application_date
+                        )
+                    st.success("Investimento atualizado.")
+                    st.rerun()
+                except ValueError as error:
+                    st.error(str(error))
+
+            with st.form(f"delete_investment_{investment.id}"):
+                confirm_investment_delete = st.checkbox(
+                    "Confirmo excluir o investimento e todo o seu histórico",
+                    key=f"confirm_investment_{investment.id}",
+                )
+                delete_investment = st.form_submit_button("Excluir investimento")
+            if delete_investment:
+                if not confirm_investment_delete:
+                    st.warning("Marque a confirmação antes de excluir.")
+                else:
+                    with SessionLocal() as session:
+                        InvestmentRepository(session).delete(investment.id)
+                    st.success("Investimento e histórico excluídos.")
+                    st.rerun()
+
+            with SessionLocal() as session:
+                investment_history = FinanceService(FinanceRepository(session)).investment_history(investment.id)
+            if investment_history:
+                snapshot_options = [item["snapshot"] for item in investment_history]
+                selected_snapshot = st.selectbox(
+                    "Atualização do histórico", snapshot_options,
+                    format_func=lambda item: f"{item.snapshot_date:%d/%m/%Y} — {brl(item.total_value)}",
+                    key=f"snapshot_choice_{investment.id}",
+                )
+                with st.form(f"edit_snapshot_{investment.id}_{selected_snapshot.id}"):
+                    updated_snapshot_date = st.date_input(
+                        "Data da atualização", value=selected_snapshot.snapshot_date,
+                        key=f"snapshot_date_{investment.id}_{selected_snapshot.id}",
+                    )
+                    updated_snapshot_total = st.text_input(
+                        "Valor total (R$)", value=str(selected_snapshot.total_value).replace(".", ","),
+                        key=f"snapshot_total_{investment.id}_{selected_snapshot.id}",
+                    )
+                    updated_snapshot_contributions = st.text_input(
+                        "Aportes no período (R$)", value=str(selected_snapshot.contributions).replace(".", ","),
+                        key=f"snapshot_contributions_{investment.id}_{selected_snapshot.id}",
+                    )
+                    update_snapshot = st.form_submit_button("Salvar atualização do histórico")
+                if update_snapshot:
+                    try:
+                        with SessionLocal() as session:
+                            FinanceService(FinanceRepository(session)).update_investment_snapshot(
+                                selected_snapshot.id,
+                                updated_snapshot_date,
+                                _parse_money(updated_snapshot_total),
+                                _parse_money(updated_snapshot_contributions),
+                            )
+                        st.success("Atualização do histórico salva; rendimentos foram recalculados.")
+                        st.rerun()
+                    except (InvalidOperation, ValueError) as error:
+                        st.error("Informe valores válidos." if isinstance(error, InvalidOperation) else str(error))
+
+                with st.form(f"delete_snapshot_{investment.id}_{selected_snapshot.id}"):
+                    confirm_snapshot_delete = st.checkbox(
+                        "Confirmo excluir esta atualização",
+                        key=f"confirm_snapshot_{investment.id}_{selected_snapshot.id}",
+                    )
+                    delete_snapshot = st.form_submit_button("Excluir atualização")
+                if delete_snapshot:
+                    if not confirm_snapshot_delete:
+                        st.warning("Marque a confirmação antes de excluir.")
+                    else:
+                        with SessionLocal() as session:
+                            FinanceService(FinanceRepository(session)).delete_investment_snapshot(selected_snapshot.id)
+                        st.success("Atualização excluída.")
+                        st.rerun()
 
     if snapshots:
         history_rows = []

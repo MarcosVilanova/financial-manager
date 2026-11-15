@@ -53,6 +53,55 @@ def show_cards():
     else:
         st.info("Nenhum cartão cadastrado.")
 
+    if cards:
+        st.subheader("Editar ou excluir cartões")
+        st.caption("Alterar o fechamento ou vencimento afeta as próximas compras; faturas já registradas permanecem iguais.")
+        for card in cards:
+            with st.expander(f"Gerenciar: {card.name}"):
+                with st.form(f"edit_card_{card.id}"):
+                    bank = st.selectbox(
+                        "Instituição financeira", banks,
+                        index=next((i for i, item in enumerate(banks) if item.id == card.bank_id), 0),
+                        format_func=lambda item: item.name,
+                    )
+                    name = st.text_input("Nome ou identificação", value=card.name)
+                    closing = st.number_input(
+                        "Dia de fechamento", min_value=1, max_value=31, value=card.closing_day,
+                        key=f"closing_{card.id}",
+                    )
+                    due = st.number_input(
+                        "Dia de vencimento", min_value=1, max_value=31, value=card.due_day,
+                        key=f"due_{card.id}",
+                    )
+                    update_card = st.form_submit_button("Salvar cartão")
+                if update_card:
+                    try:
+                        with SessionLocal() as session:
+                            FinanceService(FinanceRepository(session)).update_card(
+                                card.id, bank.id, name, int(due), int(closing)
+                            )
+                        st.success("Cartão atualizado.")
+                        st.rerun()
+                    except ValueError as error:
+                        st.error(str(error))
+
+                with st.form(f"delete_card_{card.id}"):
+                    confirm_card_delete = st.checkbox(
+                        "Confirmo a exclusão deste cartão", key=f"confirm_card_{card.id}"
+                    )
+                    delete_card = st.form_submit_button("Excluir cartão")
+                if delete_card:
+                    if not confirm_card_delete:
+                        st.warning("Marque a confirmação antes de excluir.")
+                    else:
+                        try:
+                            with SessionLocal() as session:
+                                FinanceService(FinanceRepository(session)).delete_card(card.id)
+                            st.success("Cartão excluído.")
+                            st.rerun()
+                        except ValueError as error:
+                            st.error(str(error))
+
     card_names = {card.id: card.name for card in cards}
     invoice_expenses = [
         item for item in expenses
