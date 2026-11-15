@@ -1,0 +1,61 @@
+name: financial-manager
+
+services:
+  db-seed:
+    build: .
+    image: financial-manager:local
+    command: ["python", "scripts/seed_docker_database.py"]
+    volumes:
+      - ./financial_manager.db:/source/financial_manager.db:ro
+      - financial_data:/data
+    restart: "no"
+
+  app:
+    build: .
+    image: financial-manager:local
+    command:
+      - streamlit
+      - run
+      - main.py
+      - --server.address=0.0.0.0
+      - --server.port=8501
+      - --server.headless=true
+    environment:
+      DATABASE_URL: sqlite:////data/financial_manager.db
+      TZ: America/Sao_Paulo
+    ports:
+      - "8501:8501"
+    volumes:
+      - financial_data:/data
+    depends_on:
+      db-seed:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  report-scheduler:
+    build: .
+    image: financial-manager:local
+    command: ["python", "scripts/report_scheduler.py"]
+    environment:
+      DATABASE_URL: sqlite:////data/financial_manager.db
+      TZ: America/Sao_Paulo
+      APP_TIMEZONE: America/Sao_Paulo
+    volumes:
+      - financial_data:/data
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  financial_data:
